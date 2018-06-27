@@ -53,7 +53,8 @@ def proposal_layer(rpn_cls_prob, rpn_bbox_pred, im_info, cfg_key, _feat_stride, 
 
   return blob, scores
 
-
+#从最后一层特征图中所有的anchor(W*H*9)中筛选出大约2k多个anchor
+#返回值: blob:(2k,5):[0,x1,y1,x2,y2] ;; scores:(2k,1)
 def proposal_layer_tf(rpn_cls_prob, rpn_bbox_pred, im_info, cfg_key, _feat_stride, anchors, num_anchors):
   """
   rpn_cls_prob = Tensor("vgg_16_1/rpn_cls_prob/transpose_1:0", shape=(1, ?, ?, 18), dtype=float32)
@@ -100,10 +101,7 @@ def proposal_layer_tf(rpn_cls_prob, rpn_bbox_pred, im_info, cfg_key, _feat_strid
   batch_inds = tf.zeros((tf.shape(indices)[0], 1), dtype=tf.float32)
   blob = tf.concat([batch_inds, boxes], 1)#
 
-  '''
-  blob:(2k,5):2k代表非极大值抑制后剩余的框
-  scores:(2k,1)
-  '''
+
   return blob, scores
 
 

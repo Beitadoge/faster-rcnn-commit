@@ -143,19 +143,27 @@ class Network(object):
                                   spatial_scale=1. / 16.)[0]
 
   def _crop_pool_layer(self, bottom, rois, name):
+    '''
+    bottom=net_conv =<tf.Tensor 'vgg_16/conv5/conv5_3/Relu:0' shape=(1, ?, ?, 512) dtype=float32>
+    rois:(256,5),每行元素为[0,x1,y1,x2,y2]
+    '''
     with tf.variable_scope(name) as scope:
-      batch_ids = tf.squeeze(tf.slice(rois, [0, 0], [-1, 1], name="batch_id"), [1])
+      batch_ids = tf.squeeze(tf.slice(rois, [0, 0], [-1, 1], name="batch_id"), [1])#(256,):[0,0,0,0...]
       # Get the normalized coordinates of bounding boxes
       bottom_shape = tf.shape(bottom)
       height = (tf.to_float(bottom_shape[1]) - 1.) * np.float32(self._feat_stride[0])
       width = (tf.to_float(bottom_shape[2]) - 1.) * np.float32(self._feat_stride[0])
-      x1 = tf.slice(rois, [0, 1], [-1, 1], name="x1") / width
+      x1 = tf.slice(rois, [0, 1], [-1, 1], name="x1") / width #(256,1)
       y1 = tf.slice(rois, [0, 2], [-1, 1], name="y1") / height
       x2 = tf.slice(rois, [0, 3], [-1, 1], name="x2") / width
       y2 = tf.slice(rois, [0, 4], [-1, 1], name="y2") / height
       # Won't be back-propagated to rois anyway, but to save time
       bboxes = tf.stop_gradient(tf.concat([y1, x1, y2, x2], axis=1))
-      pre_pool_size = cfg.POOLING_SIZE * 2
+      pre_pool_size = cfg.POOLING_SIZE * 2 #cfg.POOLING_SIZE=7
+      '''
+      batch_inds:表示proposal来自mini_batch中的哪一张照片
+      
+      '''
       crops = tf.image.crop_and_resize(bottom, bboxes, tf.to_int32(batch_ids), [pre_pool_size, pre_pool_size], name="crops")
 
     return slim.max_pool2d(crops, [2, 2], padding='SAME')
@@ -179,9 +187,12 @@ class Network(object):
       rpn_bbox_inside_weights.set_shape([1, None, None, self._num_anchors * 4])
       rpn_bbox_outside_weights.set_shape([1, None, None, self._num_anchors * 4])
 
+      #rpn_labels:这是真实的每个anchor是含有目标还是没有目标.
       rpn_labels = tf.to_int32(rpn_labels, name="to_int32")
       self._anchor_targets['rpn_labels'] = rpn_labels
+      #rpn_bbox_targets:这个是真实的每个anchor与其覆盖最大的ground-truth来计算得到的tx, ty, tw, th
       self._anchor_targets['rpn_bbox_targets'] = rpn_bbox_targets
+      #bbox_inside_weights，这个权值起到的作用是论文中公式(1)中的pi*
       self._anchor_targets['rpn_bbox_inside_weights'] = rpn_bbox_inside_weights
       self._anchor_targets['rpn_bbox_outside_weights'] = rpn_bbox_outside_weights
 
@@ -214,8 +225,9 @@ class Network(object):
 
       return rois, roi_scores
 
+  
+  #计算一张图所有基准的anchors
   def _anchor_component(self):
-    #'ANCHOR_default'
     with tf.variable_scope('ANCHOR_' + self._tag) as scope:
       # just to get the shape right
       height = tf.to_int32(tf.ceil(self._im_info[0] / np.float32(self._feat_stride[0])))
@@ -238,23 +250,34 @@ class Network(object):
       self._anchors = anchors
       self._anchor_length = anchor_length
 
+  #搭建Faster Rcnn 网络结构
   def _build_network(self, is_training=True):
-    # select initializers
-    if cfg.TRAIN.TRUNCATED:#False
+    '''
+    选择初始化的方式
+    默认:cfg.TRAIN.TRUNCATED=False
+    '''
+    if cfg.TRAIN.TRUNCATED:
       initializer = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
       initializer_bbox = tf.truncated_normal_initializer(mean=0.0, stddev=0.001)
     else:
       initializer = tf.random_normal_initializer(mean=0.0, stddev=0.01)
       initializer_bbox = tf.random_normal_initializer(mean=0.0, stddev=0.001)
-
-    net_conv = self._image_to_head(is_training) #net_conv =<tf.Tensor 'vgg_16/conv5/conv5_3/Relu:0' shape=(1, ?, ?, 512) dtype=float32>
+    
+    '''
+    搭建Basebone结构:VGG16
+    这里的self._image_to_head(is_training)调用的是vgg16类里面的方法,而不是network里面的方法,
+    因为此时传进来的self就是指代vgg16!!!
+    self = <nets.vgg16.vgg16 object at 0x7f11502f3150>
+    net_conv =<tf.Tensor 'vgg_16/conv5/conv5_3/Relu:0' shape=(1, ?, ?, 512) dtype=float32>
+    '''
+    net_conv = self._image_to_head(is_training)
+    #搭建RPN+ROIPooling网络结构
     with tf.variable_scope(self._scope, self._scope):
-      # build the anchors for the image
-      # set_trace()
+      #计算输入的图中所有基本的anchor
       self._anchor_component()
-      # region proposal network
-      rois = self._region_proposal(net_conv, is_training, initializer)
-      # region of interest pooling
+      #搭建RPN网络结构
+      rois = self._region_proposal(net_conv, is_training, initializer)#rois:(256,5),每行元素为[0,x1,y1,x2,y2]
+     #搭建ROIPooling网络结构
       if cfg.POOLING_MODE == 'crop':
         pool5 = self._crop_pool_layer(net_conv, rois, "pool5")
       else:
@@ -329,12 +352,18 @@ class Network(object):
 
     return loss
 
+  
+  #筛选一张图中所有基准的anchors,提取要输入到ROIPooling层的proposal.
   def _region_proposal(self, net_conv, is_training, initializer):
-    #self = <nets.vgg16.vgg16 object at 0x7f11502f3150>
-    #net_conv = Tensor("vgg_16/conv5/conv5_3/Relu:0", shape=(1, ?, ?, 512), dtype=float32)
-    #is_training = True
-    #initializer = <tensorflow.python.ops.init_ops.RandomNormal object at 0x7f114d6686d0>
-    #cfg.RPN_CHANNELS=512
+    '''
+    输入变量的取值:
+    self = <nets.vgg16.vgg16 object at 0x7f11502f3150>
+    net_conv = Tensor("vgg_16/conv5/conv5_3/Relu:0", shape=(1, ?, ?, 512), dtype=float32)
+    is_training = True
+    initializer = <tensorflow.python.ops.init_ops.RandomNormal object at 0x7f114d6686d0>
+    cfg.RPN_CHANNELS=512
+    '''
+    #对vgg16最后一层特征图进行3*3*512滑动窗口的卷积
     rpn = slim.conv2d(net_conv, cfg.RPN_CHANNELS, [3, 3], trainable=is_training, weights_initializer=initializer,
                         scope="rpn_conv/3x3")
     self._act_summaries.append(rpn)
@@ -349,18 +378,14 @@ class Network(object):
     rpn_bbox_pred = slim.conv2d(rpn, self._num_anchors * 4, [1, 1], trainable=is_training,
                                 weights_initializer=initializer,
                                 padding='VALID', activation_fn=None, scope='rpn_bbox_pred')#rpn_bbox_pred:(1,6,8,36)
-
-    set_trace()
     if is_training:
-      '''
-      rois : (2k,5) : [0,x1,y1,x2,y2],,修正后的anchor框
-      sores : (2k,)
-      '''
-      rois, roi_scores = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, "rois")
+      rois, roi_scores = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, "rois")#rois:(2k,5):[0,x1,y1,x2,y2],,roi_scores:(2k, )
+      #为什么要计算rpn_labels??????
+      #rpn_labels:这是真实的每个anchor是含有目标还是没有目标.
       rpn_labels = self._anchor_target_layer(rpn_cls_score, "anchor")
       # Try to have a deterministic order for the computing graph, for reproducibility
       with tf.control_dependencies([rpn_labels]):
-        rois, _ = self._proposal_target_layer(rois, roi_scores, "rpn_rois")
+        rois, _ = self._proposal_target_layer(rois, roi_scores, "rpn_rois")#rois:(256,5),每行元素为[0,x1,y1,x2,y2]
     else:
       if cfg.TEST.MODE == 'nms':
         rois, _ = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, "rois")
@@ -403,11 +428,17 @@ class Network(object):
   def _head_to_tail(self, pool5, is_training, reuse=None):
     raise NotImplementedError
 
+  '''
+  搭建Faster Rcnn 模型结构
+  '''
   def create_architecture(self, mode, num_classes, tag=None,
                           anchor_scales=(8, 16, 32), anchor_ratios=(0.5, 1, 2)):
-    self._image = tf.placeholder(tf.float32, shape=[1, None, None, 3])
-    self._im_info = tf.placeholder(tf.float32, shape=[3])
-    self._gt_boxes = tf.placeholder(tf.float32, shape=[None, 5])
+    '''
+    设置模型的输入
+    '''
+    self._image = tf.placeholder(tf.float32, shape=[1, None, None, 3])#模型图片的输入
+    self._im_info = tf.placeholder(tf.float32, shape=[3])#保存着[width,height,im_scales],,im_scales:图片被压缩到600最小边长尺寸时候被压缩的比例
+    self._gt_boxes = tf.placeholder(tf.float32, shape=[None, 5])#标签gt_box,,前四位是坐标,最后一位是类别
     self._tag = tag
 
     self._num_classes = num_classes
@@ -438,6 +469,9 @@ class Network(object):
                     weights_regularizer=weights_regularizer,
                     biases_regularizer=biases_regularizer, 
                     biases_initializer=tf.constant_initializer(0.0)): 
+      '''
+      开始搭建Faster Rcnn 网络
+      '''
       rois, cls_prob, bbox_pred = self._build_network(training)
 
     layers_to_output = {'rois': rois}

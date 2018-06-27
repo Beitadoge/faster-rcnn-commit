@@ -21,7 +21,6 @@ def proposal_target_layer(rpn_rois, rpn_scores, gt_boxes, _num_classes):
   Assign object detection proposals to ground-truth targets. Produces proposal
   classification labels and bounding-box regression targets.
   """
-
   # Proposal ROIs (0, x1, y1, x2, y2) coming from RPN
   # (i.e., rpn.proposal_layer.ProposalLayer), or any other source
   all_rois = rpn_rois
@@ -57,6 +56,13 @@ def proposal_target_layer(rpn_rois, rpn_scores, gt_boxes, _num_classes):
   bbox_inside_weights = bbox_inside_weights.reshape(-1, _num_classes * 4)
   bbox_outside_weights = np.array(bbox_inside_weights > 0).astype(np.float32)
 
+  '''
+  [labels] : 大小为[256, ],保存着rois中所有positive的proposal的类别,negative的proposal的类别为0
+  [rois] : 大小为[256,5],每行元素为[0,x1,y1,x2,y2]
+  [roi_scores] : 大小为[256, ]保存着rois中每一个proposal的得分
+  [bbox_targets] :[256 , num_class×4] 每行元素为［0,0,0,0,0,dx,dy,dw,dh,0,0,0,...］
+  [bbox_inside_weights] : [256 , num_class×4] 每行元素为［0,0,0,0,0,1,1,1,1,0,0,0,...］
+  '''
   return rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights
 
 
@@ -87,32 +93,50 @@ def _get_bbox_regression_labels(bbox_target_data, num_classes):
 
 def _compute_targets(ex_rois, gt_rois, labels):
   """Compute bounding-box regression targets for an image."""
-
   assert ex_rois.shape[0] == gt_rois.shape[0]
   assert ex_rois.shape[1] == 4
   assert gt_rois.shape[1] == 4
 
+  #targets:是anchor距离gt_box的 :[dx, dy，dw, dh]
   targets = bbox_transform(ex_rois, gt_rois)
   #cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED=True
   if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
     # Optionally normalize targets by a precomputed mean and stdev
+    '''
+    下面这条语句的作用不懂
+    '''
     targets = ((targets - np.array(cfg.TRAIN.BBOX_NORMALIZE_MEANS))
                / np.array(cfg.TRAIN.BBOX_NORMALIZE_STDS))
   return np.hstack(
     (labels[:, np.newaxis], targets)).astype(np.float32, copy=False)
 
 
+'''
+该函数作用就是从all_rois中的anchor中，随机筛选rois_per_image个anchor作为proposal,并且在
+这些proposal中，前景一共有fg_rois_per_image个．并返回：
+[labels] : 大小为[256, ],保存着rois中所有positive的proposal的类别,negative的proposal的类别为0
+[rois] : 大小为[256,5],每行元素为[0,x1,y1,x2,y2]
+[roi_scores] : 大小为[256, ]保存着rois中每一个proposal的得分
+[bbox_targets] :[256 , num_class×4] 每行元素为［0,0,0,0,0,dx,dy,dw,dh,0,0,0,...］
+[bbox_inside_weights] : [256 , num_class×4] 每行元素为［0,0,0,0,0,1,1,1,1,0,0,0,...］
+'''
 def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image, num_classes):
-  """Generate a random sample of RoIs comprising foreground and background
-  examples.
-  """
-  # overlaps: (rois x gt_boxes)
+  '''
+  [all_rois] : 大小为[anchor_size,5],,anchor_size大约为2k,,每行元素为[0,x1,y1,x2,y2],其中(x1,y1)为左上角的坐标.(x2,y2)为右下角的坐标
+	[all_scores] : 大小为[anchor_size, ],,保存着每个框所得到的分数
+	[gt_boxes] : 大小为[gt_size,5],,gt_size为一幅图中所有框的个数.每行元素为[x1,y1,x2,y2,gt_box_class]其中(x1,y1)为左上角的坐标.(x2,y2)为右下角的坐标,,gt_box_class为该框里面的物体的类别
+	[fg_rois_per_image] : 每张图片中前景的个数
+	[rois_per_image] : 每张图片中索要提取的proposal数
+	[num_classes] : 需要分类的类别总数
+  '''
+
+  #overlaps: (anchors_size,gt_box_size)
   overlaps = bbox_overlaps(
     np.ascontiguousarray(all_rois[:, 1:5], dtype=np.float),
     np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))
-  gt_assignment = overlaps.argmax(axis=1)
-  max_overlaps = overlaps.max(axis=1)
-  labels = gt_boxes[gt_assignment, 4]
+  gt_assignment = overlaps.argmax(axis=1)#大小为[anchors_size , ]， gt_assignment[i]表示与all_rois[i]IOU值最大的gt_boxes的索引号
+  max_overlaps = overlaps.max(axis=1)#大小为[anchors_size , ], max_overlaps[i]表示：与all_rois[i]与gt_boxes[gt_assignment[i]]的IOU值
+  labels = gt_boxes[gt_assignment, 4]#大小为[anchors_size , ]，labels[i]表示:all_rois[i]这个框里面物体的具体类别，如猫，狗
 
   # Select foreground RoIs as those with >= FG_THRESH overlap
   # cfg.TRAIN.FG_THRESH=0.5
