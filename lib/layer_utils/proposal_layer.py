@@ -72,7 +72,7 @@ def proposal_layer_tf(rpn_cls_prob, rpn_bbox_pred, im_info, cfg_key, _feat_strid
   nms_thresh = cfg[cfg_key].RPN_NMS_THRESH #0.7
 
   # Get the scores and bounding boxes
-  scores = rpn_cls_prob[:, :, :, num_anchors:]
+  scores = rpn_cls_prob[:, :, :, num_anchors:]#？？？？为什么
   scores = tf.reshape(scores, shape=(-1,))
   rpn_bbox_pred = tf.reshape(rpn_bbox_pred, shape=(-1, 4))
 

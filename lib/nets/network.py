@@ -367,6 +367,10 @@ class Network(object):
     rpn = slim.conv2d(net_conv, cfg.RPN_CHANNELS, [3, 3], trainable=is_training, weights_initializer=initializer,
                         scope="rpn_conv/3x3")
     self._act_summaries.append(rpn)
+    '''
+    这18个通道所代表意义为：
+    [anchor1-,anchor2-,...,anchor9-,anchor1+,anchor2+,...,anchor9+]
+    '''
     rpn_cls_score = slim.conv2d(rpn, self._num_anchors * 2, [1, 1], trainable=is_training,
                                 weights_initializer=initializer,
                                 padding='VALID', activation_fn=None, scope='rpn_cls_score')#rpn_cls_score:(1,6,8,18)
