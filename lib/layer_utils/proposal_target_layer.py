@@ -60,8 +60,9 @@ def proposal_target_layer(rpn_rois, rpn_scores, gt_boxes, _num_classes):
   [labels] : 大小为[256, ],保存着rois中所有positive的proposal的类别,negative的proposal的类别为0
   [rois] : 大小为[256,5],每行元素为[0,x1,y1,x2,y2]
   [roi_scores] : 大小为[256, ]保存着rois中每一个proposal的得分
-  [bbox_targets] :[256 , num_class×4] 每行元素为［0,0,0,0,0,dx,dy,dw,dh,0,0,0,...］
-  [bbox_inside_weights] : [256 , num_class×4] 每行元素为［0,0,0,0,0,1,1,1,1,0,0,0,...］
+  [bbox_targets] :[256 , num_class×4] 每行元素为［0,0,0,0,0,dx,dy,dw,dh,0,0,0,...]
+  [bbox_inside_weights] : [256 , num_class×4] 每行元素为［0,0,0,0,0,1,1,1,1,0,0,0,...]
+  [bbox_outside_weights] : [256 , num_class×4] 每行元素为［0,0,0,0,0,1,1,1,1,0,0,0,...]
   '''
   return rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights
 
@@ -103,7 +104,7 @@ def _compute_targets(ex_rois, gt_rois, labels):
   if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
     # Optionally normalize targets by a precomputed mean and stdev
     '''
-    下面这条语句的作用不懂
+    下面这条语句的作用不懂???
     '''
     targets = ((targets - np.array(cfg.TRAIN.BBOX_NORMALIZE_MEANS))
                / np.array(cfg.TRAIN.BBOX_NORMALIZE_STDS))

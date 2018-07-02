@@ -110,6 +110,7 @@ class Network(object):
 
     return rois, rpn_scores
 
+  '''从所有的anchors中筛选出大约2k多个rois'''
   def _proposal_layer(self, rpn_cls_prob, rpn_bbox_pred, name):
     with tf.variable_scope(name) as scope:
       if cfg.USE_E2E_TF:
@@ -129,8 +130,8 @@ class Network(object):
                                self._feat_stride, self._anchors, self._num_anchors],
                               [tf.float32, tf.float32], name="proposal")
 
-      rois.set_shape([None, 5])
-      rpn_scores.set_shape([None, 1])
+      rois.set_shape([None, 5]) #(2k,5):[0,x1,y1,x2,y2]
+      rpn_scores.set_shape([None, 1]) #(2k,1)
 
     return rois, rpn_scores
 
@@ -142,6 +143,7 @@ class Network(object):
                                   pooled_width=cfg.POOLING_SIZE,
                                   spatial_scale=1. / 16.)[0]
 
+  '''ROIPooling网络'''
   def _crop_pool_layer(self, bottom, rois, name):
     '''
     bottom=net_conv =<tf.Tensor 'vgg_16/conv5/conv5_3/Relu:0' shape=(1, ?, ?, 512) dtype=float32>
@@ -162,7 +164,6 @@ class Network(object):
       pre_pool_size = cfg.POOLING_SIZE * 2 #cfg.POOLING_SIZE=7
       '''
       batch_inds:表示proposal来自mini_batch中的哪一张照片
-      
       '''
       crops = tf.image.crop_and_resize(bottom, bboxes, tf.to_int32(batch_ids), [pre_pool_size, pre_pool_size], name="crops")
 
@@ -171,6 +172,7 @@ class Network(object):
   def _dropout_layer(self, bottom, name, ratio=0.5):
     return tf.nn.dropout(bottom, ratio, name=name)
 
+  '''计算所有anchors的标签，这部分的计算主要是提供给RPN损失函数的'''
   def _anchor_target_layer(self, rpn_cls_score, name):
     '''
     rpn_cls_score = <tf.Tensor 'vgg_16_1/rpn_cls_score/BiasAdd:0' shape=(1, ?, ?, 18) dtype=float32> 假设是(1,6,8,18)
@@ -187,19 +189,21 @@ class Network(object):
       rpn_bbox_inside_weights.set_shape([1, None, None, self._num_anchors * 4])
       rpn_bbox_outside_weights.set_shape([1, None, None, self._num_anchors * 4])
 
-      #rpn_labels:这是真实的每个anchor是含有目标还是没有目标.
+      #rpn_labels:(1,1,h*9,w)：这是真实的每个anchor的标签。0/1/-1,,其中为1的元素一共有128个，为0的元素一共有128个
       rpn_labels = tf.to_int32(rpn_labels, name="to_int32")
       self._anchor_targets['rpn_labels'] = rpn_labels
-      #rpn_bbox_targets:这个是真实的每个anchor与其覆盖最大的ground-truth来计算得到的tx, ty, tw, th
+      #rpn_bbox_targets:(1,h,w,36)：这个是真实的每个anchor与其覆盖最大的ground-truth来计算得到的tx, ty, tw, th
       self._anchor_targets['rpn_bbox_targets'] = rpn_bbox_targets
-      #bbox_inside_weights，这个权值起到的作用是论文中公式(1)中的pi*
+      #bbox_inside_weights:(1,h,w,36)：[0,0,0,0]或者[1,1,1,1]：这个权值起到的作用是论文中公式(1)中的pi*
       self._anchor_targets['rpn_bbox_inside_weights'] = rpn_bbox_inside_weights
+      #bbox_outside_weights:(1,h,w,36)：[0,0,0,0]或者[1/256,1/256,1/256,1/256]
       self._anchor_targets['rpn_bbox_outside_weights'] = rpn_bbox_outside_weights
 
       self._score_summaries.update(self._anchor_targets)
 
     return rpn_labels
 
+  '''从修整后的anchors(大约有2k个)中筛选出要进入ROIPooling网络的256个propoal'''
   def _proposal_target_layer(self, rois, roi_scores, name):
     with tf.variable_scope(name) as scope:
       rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights = tf.py_func(
@@ -215,18 +219,18 @@ class Network(object):
       bbox_inside_weights.set_shape([cfg.TRAIN.BATCH_SIZE, self._num_classes * 4])
       bbox_outside_weights.set_shape([cfg.TRAIN.BATCH_SIZE, self._num_classes * 4])
 
-      self._proposal_targets['rois'] = rois
-      self._proposal_targets['labels'] = tf.to_int32(labels, name="to_int32")
-      self._proposal_targets['bbox_targets'] = bbox_targets
-      self._proposal_targets['bbox_inside_weights'] = bbox_inside_weights
-      self._proposal_targets['bbox_outside_weights'] = bbox_outside_weights
+      self._proposal_targets['rois'] = rois #[256,5],每行元素为[0,x1,y1,x2,y2]
+      self._proposal_targets['labels'] = tf.to_int32(labels, name="to_int32") #[256, ],保存着rois中所有positive的proposal的类别为1,negative的proposal的类别为0
+      self._proposal_targets['bbox_targets'] = bbox_targets #[256 , num_class×4] 每行元素为［0,0,0,0,0,dx,dy,dw,dh,0,0,0,...］
+      self._proposal_targets['bbox_inside_weights'] = bbox_inside_weights #[256 , num_class×4] 每行元素为［0,0,0,0,0,1,1,1,1,0,0,0,...］
+      self._proposal_targets['bbox_outside_weights'] = bbox_outside_weights#[bbox_outside_weights] : [256 , num_class×4] 每行元素为［0,0,0,0,0,1,1,1,1,0,0,0,...］
 
       self._score_summaries.update(self._proposal_targets)
 
       return rois, roi_scores
 
   
-  #计算一张图所有基准的anchors
+  '''计算一张图所有基准的anchors'''
   def _anchor_component(self):
     with tf.variable_scope('ANCHOR_' + self._tag) as scope:
       # just to get the shape right
@@ -250,13 +254,9 @@ class Network(object):
       self._anchors = anchors
       self._anchor_length = anchor_length
 
-  #搭建Faster Rcnn 网络结构
+  '''搭建Faster Rcnn 网络结构'''
   def _build_network(self, is_training=True):
-    '''
-    选择初始化的方式
-    默认:cfg.TRAIN.TRUNCATED=False
-    '''
-    if cfg.TRAIN.TRUNCATED:
+    if cfg.TRAIN.TRUNCATED: #默认:cfg.TRAIN.TRUNCATED=False
       initializer = tf.truncated_normal_initializer(mean=0.0, stddev=0.01)
       initializer_bbox = tf.truncated_normal_initializer(mean=0.0, stddev=0.001)
     else:
@@ -293,6 +293,7 @@ class Network(object):
 
     return rois, cls_prob, bbox_pred
 
+  ''''''
   def _smooth_l1_loss(self, bbox_pred, bbox_targets, bbox_inside_weights, bbox_outside_weights, sigma=1.0, dim=[1]):
     sigma_2 = sigma ** 2
     box_diff = bbox_pred - bbox_targets
@@ -308,22 +309,23 @@ class Network(object):
     ))
     return loss_box
 
+  '''计算RPN以及RCNN的损失函数'''
   def _add_losses(self, sigma_rpn=3.0):
     with tf.variable_scope('LOSS_' + self._tag) as scope:
       # RPN, class loss
-      rpn_cls_score = tf.reshape(self._predictions['rpn_cls_score_reshape'], [-1, 2])
-      rpn_label = tf.reshape(self._anchor_targets['rpn_labels'], [-1])
-      rpn_select = tf.where(tf.not_equal(rpn_label, -1))
-      rpn_cls_score = tf.reshape(tf.gather(rpn_cls_score, rpn_select), [-1, 2])
-      rpn_label = tf.reshape(tf.gather(rpn_label, rpn_select), [-1])
+      rpn_cls_score = tf.reshape(self._predictions["rpn_cls_score_reshape"], [-1, 2])#eg:(1,6*h,w,2)
+      rpn_label = tf.reshape(self._anchor_targets['rpn_labels'], [-1]) #(1,1,h*9,w)
+      rpn_select = tf.where(tf.not_equal(rpn_label, -1))#筛选出正负样本框，一共有256个。
+      rpn_cls_score = tf.reshape(tf.gather(rpn_cls_score, rpn_select), [-1, 2])#（256,2）
+      rpn_label = tf.reshape(tf.gather(rpn_label, rpn_select), [-1])#(256,)
       rpn_cross_entropy = tf.reduce_mean(
         tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
       # RPN, bbox loss
-      rpn_bbox_pred = self._predictions['rpn_bbox_pred']
-      rpn_bbox_targets = self._anchor_targets['rpn_bbox_targets']
-      rpn_bbox_inside_weights = self._anchor_targets['rpn_bbox_inside_weights']
-      rpn_bbox_outside_weights = self._anchor_targets['rpn_bbox_outside_weights']
+      rpn_bbox_pred = self._predictions["rpn_bbox_pred"]#(1,h,w,36)
+      rpn_bbox_targets = self._anchor_targets['rpn_bbox_targets']#(1,h,w,36)
+      rpn_bbox_inside_weights = self._anchor_targets['rpn_bbox_inside_weights']#(1,h,w,36)
+      rpn_bbox_outside_weights = self._anchor_targets['rpn_bbox_outside_weights']#(1,h,w,36)
       rpn_loss_box = self._smooth_l1_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights,
                                           rpn_bbox_outside_weights, sigma=sigma_rpn, dim=[1, 2, 3])
 
@@ -353,7 +355,7 @@ class Network(object):
     return loss
 
   
-  #筛选一张图中所有基准的anchors,提取要输入到ROIPooling层的proposal.
+  '''搭建RPN网络结构'''
   def _region_proposal(self, net_conv, is_training, initializer):
     '''
     输入变量的取值:
@@ -432,9 +434,7 @@ class Network(object):
   def _head_to_tail(self, pool5, is_training, reuse=None):
     raise NotImplementedError
 
-  '''
-  搭建Faster Rcnn 模型结构
-  '''
+  '''搭建Faster Rcnn 模型结构'''
   def create_architecture(self, mode, num_classes, tag=None,
                           anchor_scales=(8, 16, 32), anchor_ratios=(0.5, 1, 2)):
     '''
@@ -489,6 +489,9 @@ class Network(object):
       self._predictions["bbox_pred"] *= stds
       self._predictions["bbox_pred"] += means
     else:
+      '''
+      构造损失函数
+      '''
       self._add_losses()
       layers_to_output.update(self._losses)
 

@@ -125,7 +125,6 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, im_info, _feat_stride, all_anch
   bbox_targets = np.zeros((len(inds_inside), 4), dtype=np.float32) #(in_anchor_size,4)
   bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :]) #(in_anchor_size,4)
 
-
   '''bbox_inside_weights:每行值为：[0,0,0,0]或者[1,1,1,1]'''
   bbox_inside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)#(in_anchor_size,4)
   # only the positive ones have regression targets cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS=[1,1,1,1]
@@ -133,6 +132,7 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, im_info, _feat_stride, all_anch
 
   '''bbox_outside_weights每行值为：[0,0,0,0]或者[1/256,1/256,1/256,1/256]'''
   bbox_outside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)#(in_anchor_size,4)
+
   #cfg.TRAIN.RPN_POSITIVE_WEIGHT=-0.1
   if cfg.TRAIN.RPN_POSITIVE_WEIGHT < 0:
     # uniform weighting of examples (given non-uniform sampling)
@@ -152,9 +152,9 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, im_info, _feat_stride, all_anch
 
   # map up to original set of anchors
   labels = _unmap(labels, total_anchors, inds_inside, fill=-1)#labels从(in_anchor_size, )>>>(w*h*9,)
-  bbox_targets = _unmap(bbox_targets, total_anchors, inds_inside, fill=0)
-  bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside, fill=0)
-  bbox_outside_weights = _unmap(bbox_outside_weights, total_anchors, inds_inside, fill=0)
+  bbox_targets = _unmap(bbox_targets, total_anchors, inds_inside, fill=0)#bbox_targets从(in_anchor_size,4)>>>(w*h*9,4)
+  bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside, fill=0)#同上
+  bbox_outside_weights = _unmap(bbox_outside_weights, total_anchors, inds_inside, fill=0)#同上
 
   # labels
   labels = labels.reshape((1, height, width, A)).transpose(0, 3, 1, 2)
@@ -164,19 +164,24 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, im_info, _feat_stride, all_anch
   # bbox_targets
   bbox_targets = bbox_targets \
     .reshape((1, height, width, A * 4))
-
   rpn_bbox_targets = bbox_targets
+
   # bbox_inside_weights
   bbox_inside_weights = bbox_inside_weights \
     .reshape((1, height, width, A * 4))
-
   rpn_bbox_inside_weights = bbox_inside_weights
 
   # bbox_outside_weights
   bbox_outside_weights = bbox_outside_weights \
     .reshape((1, height, width, A * 4))
-
   rpn_bbox_outside_weights = bbox_outside_weights
+
+  '''
+  rpn_labels : (1,1,h*9,w)
+  rpn_bbox_targets : (1,h,w,36)
+  rpn_bbox_inside_weights : (1,h,w,36)
+  rpn_bbox_outside_weights : (1,h,w,36)
+  '''
   return rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
 
 
