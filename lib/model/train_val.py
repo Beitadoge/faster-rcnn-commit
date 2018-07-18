@@ -242,6 +242,7 @@ class SolverWrapper(object):
       os.remove(str(sfile_meta))
       ss_paths.remove(sfile)
 
+  '''训练Faster Rcnn'''
   def train_model(self, sess, max_iters):
     # Build data layers for both training and validation set
     self.data_layer = RoIDataLayer(self.roidb, self.imdb.num_classes)
@@ -374,12 +375,18 @@ def train_net(network, imdb, roidb, valroidb, output_dir, tb_dir,
   roidb = filter_roidb(roidb)
   valroidb = filter_roidb(valroidb)
 
+  #GPU配置
   tfconfig = tf.ConfigProto(allow_soft_placement=True)
   tfconfig.gpu_options.allow_growth = True
-  set_trace()
+
+  #开启会话
   with tf.Session(config=tfconfig) as sess:
+
+    #创造一个SolverWrapper类对象sw
     sw = SolverWrapper(sess, network, imdb, roidb, valroidb, output_dir, tb_dir,
                        pretrained_model=pretrained_model)
+
+    #开启训练模型
     print('Solving...')
     sw.train_model(sess, max_iters)
     print('done solving')
