@@ -16,8 +16,8 @@ import numpy.random as npr
 from utils.cython_bbox import bbox_overlaps
 from model.bbox_transform import bbox_transform
 
+'''Same as the anchor target layer in original Fast/er RCNN'''
 def anchor_target_layer(rpn_cls_score, gt_boxes, im_info, _feat_stride, all_anchors, num_anchors):
-  """Same as the anchor target layer in original Fast/er RCNN """
   '''
   rpn_cls_score : = <tf.Tensor 'vgg_16_1/rpn_cls_score/BiasAdd:0' shape=(1, ?, ?, 18) dtype=float32> 假设是(1,h,w,18)
   gt_boxes = (gt_size,5):gt_size为一幅图中所有框的个数.每行元素为[x1,y1,x2,y2,gt_box_class]其中(x1,y1)为左上角的坐标.(x2,y2)为右下角的坐标,,gt_box_class为该框里面的物体的类别

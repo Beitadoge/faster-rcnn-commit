@@ -163,6 +163,7 @@ class Network(object):
       bboxes = tf.stop_gradient(tf.concat([y1, x1, y2, x2], axis=1))
       pre_pool_size = cfg.POOLING_SIZE * 2 #cfg.POOLING_SIZE=7
       '''
+      tf.image.crop_and_resize：
       batch_inds:表示proposal来自mini_batch中的哪一张照片
       '''
       crops = tf.image.crop_and_resize(bottom, bboxes, tf.to_int32(batch_ids), [pre_pool_size, pre_pool_size], name="crops")
@@ -437,9 +438,7 @@ class Network(object):
   '''搭建Faster Rcnn 模型结构'''
   def create_architecture(self, mode, num_classes, tag=None,
                           anchor_scales=(8, 16, 32), anchor_ratios=(0.5, 1, 2)):
-    '''
-    设置模型的输入
-    '''
+    #设置Graph图的输入
     self._image = tf.placeholder(tf.float32, shape=[1, None, None, 3])#模型图片的输入
     self._im_info = tf.placeholder(tf.float32, shape=[3])#保存着[width,height,im_scales],,im_scales:图片被压缩到600最小边长尺寸时候被压缩的比例
     self._gt_boxes = tf.placeholder(tf.float32, shape=[None, 5])#标签gt_box,,前四位是坐标,最后一位是类别
@@ -473,9 +472,7 @@ class Network(object):
                     weights_regularizer=weights_regularizer,
                     biases_regularizer=biases_regularizer, 
                     biases_initializer=tf.constant_initializer(0.0)): 
-      '''
-      开始搭建Faster Rcnn 网络
-      '''
+      #开始搭建Faster Rcnn 网络
       rois, cls_prob, bbox_pred = self._build_network(training)
 
     layers_to_output = {'rois': rois}
@@ -489,9 +486,7 @@ class Network(object):
       self._predictions["bbox_pred"] *= stds
       self._predictions["bbox_pred"] += means
     else:
-      '''
-      构造损失函数
-      '''
+      # 构造损失函数
       self._add_losses()
       layers_to_output.update(self._losses)
 

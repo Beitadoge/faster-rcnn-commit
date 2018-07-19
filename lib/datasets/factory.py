@@ -1,3 +1,4 @@
+#coding=utf-8
 # --------------------------------------------------------
 # Fast R-CNN
 # Copyright (c) 2015 Microsoft
@@ -39,12 +40,15 @@ for year in ['2015']:
     name = 'coco_{}_{}'.format(year, split)
     __sets[name] = (lambda split=split, year=year: coco(split, year))
 
-
+#Get an imdb (image database) by name.
 def get_imdb(name):
-  """Get an imdb (image database) by name."""
+  '''
+  eg:
+  name = "voc_2007_trainval"
+  '''
   if name not in __sets:
     raise KeyError('Unknown dataset: {}'.format(name))
-  return __sets[name]()
+  return __sets[name]() #返回的就是类pascal_voc的一个实例对象pascal_voc(trainval,2007)
 
 
 def list_imdbs():

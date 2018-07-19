@@ -1,3 +1,4 @@
+#coding=utf-8
 # --------------------------------------------------------
 # Fast R-CNN
 # Copyright (c) 2015 Microsoft
@@ -15,6 +16,7 @@ from utils.cython_bbox import bbox_overlaps
 import numpy as np
 import scipy.sparse
 from model.config import cfg
+from ipdb import set_trace
 
 
 class imdb(object):
@@ -59,7 +61,11 @@ class imdb(object):
     self._roidb_handler = val
 
   def set_proposal_method(self, method):
-    method = eval('self.' + method + '_roidb')
+    '''
+    eval(str) : 将字符串str当成有效的表达式来求值并返回计算结果
+    eg : eval("1+1")>>>2
+    '''
+    method = eval('self.' + method + '_roidb')#eval('self.gt_roidb')
     self.roidb_handler = method
 
   @property
@@ -102,12 +108,14 @@ class imdb(object):
     """
     raise NotImplementedError
 
+  '''得到所有图片的宽度'''
   def _get_widths(self):
     return [PIL.Image.open(self.image_path_at(i)).size[0]
             for i in range(self.num_images)]
 
+  '''对数据集进行水平翻转，同事改变其gt'''
   def append_flipped_images(self):
-    num_images = self.num_images
+    num_images = self.num_images#所有图片的数量：5011
     widths = self._get_widths()
     for i in range(num_images):
       boxes = self.roidb[i]['boxes'].copy()
@@ -121,7 +129,7 @@ class imdb(object):
                'gt_classes': self.roidb[i]['gt_classes'],
                'flipped': True}
       self.roidb.append(entry)
-    self._image_index = self._image_index * 2
+    self._image_index = self._image_index * 2 #列表的乘法相当于复制
 
   def evaluate_recall(self, candidate_boxes=None, thresholds=None,
                       area='all', limit=None):

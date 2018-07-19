@@ -9,19 +9,15 @@ import math
 from layer_utils.generate_anchors import generate_anchors,_mkanchors
 import numpy as np
 from utils.cython_bbox import bbox_overlaps
-
+import xml.etree.ElementTree as ET
 
 
 if __name__ == '__main__':
-    # a = np.array([[1,2,3,4],[5,6,7,8],[1,1,1,1]])
-    # b = np.array([[1,1,1,1],[1,2,3,4],[5,6,7,8]])
-    a = np.array([[1,2,3,4],[5,6,7,8],[1,2,3,4],[1,2,3,4]])
-    b = np.array([[3,4,5,6],[5,6,7,8]])
-    c = np.array([0.9,0.8,0.7,0.6])
-    indices = tf.image.non_max_suppression(a, c, max_output_size=10, iou_threshold=0.8)
-    overlaps = bbox_overlaps(
-    np.ascontiguousarray(a, dtype=np.float),
-    np.ascontiguousarray(b, dtype=np.float))
+    filename = "../data/VOCdevkit2007/VOC2007/Annotations/000001.xml"
+    tree = ET.parse(filename)
+    objs = tree.findall('object')
+    non_diff_objs = [
+        obj for obj in objs if int(obj.find('difficult').text) == 0]
     set_trace()
 
 

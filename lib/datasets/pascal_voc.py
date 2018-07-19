@@ -1,3 +1,4 @@
+#coding=utf-8
 # --------------------------------------------------------
 # Fast R-CNN
 # Copyright (c) 2015 Microsoft
@@ -21,32 +22,31 @@ import subprocess
 import uuid
 from .voc_eval import voc_eval
 from model.config import cfg
-
+# from ipdb import set_trace
 
 class pascal_voc(imdb):
   def __init__(self, image_set, year, use_diff=False):
-    name = 'voc_' + year + '_' + image_set
+    name = 'voc_' + year + '_' + image_set #voc_2007_trainval
     if use_diff:
       name += '_diff'
     imdb.__init__(self, name)
-    self._year = year
-    self._image_set = image_set
+    self._year = year #2007
+    self._image_set = image_set #trainval
     self._devkit_path = self._get_default_path()
-    self._data_path = os.path.join(self._devkit_path, 'VOC' + self._year)
+    self._data_path = os.path.join(self._devkit_path, 'VOC' + self._year)#训练集的地址
     self._classes = ('__background__',  # always index 0
                      'aeroplane', 'bicycle', 'bird', 'boat',
                      'bottle', 'bus', 'car', 'cat', 'chair',
                      'cow', 'diningtable', 'dog', 'horse',
                      'motorbike', 'person', 'pottedplant',
                      'sheep', 'sofa', 'train', 'tvmonitor')
-    self._class_to_ind = dict(list(zip(self.classes, list(range(self.num_classes)))))
+    self._class_to_ind = dict(list(zip(self.classes, list(range(self.num_classes)))))#self.num_classes=21
     self._image_ext = '.jpg'
     self._image_index = self._load_image_set_index()
     # Default to roidb handler
-    self._roidb_handler = self.gt_roidb
-    self._salt = str(uuid.uuid4())
+    self._roidb_handler = self.gt_roidb#???????这句是什么意思，并不是调用self.gt_roidb()函数
+    self._salt = str(uuid.uuid4()) #'a4fd98b0-7275-4658-8965-9cf48a4863d8'
     self._comp_id = 'comp4'
-
     # PASCAL specific config options
     self.config = {'cleanup': True,
                    'use_salt': True,
@@ -75,33 +75,24 @@ class pascal_voc(imdb):
       'Path does not exist: {}'.format(image_path)
     return image_path
 
+  '''把trainval.txt中图片的文件名保存在image_index列表中'''
   def _load_image_set_index(self):
-    """
-    Load the indexes listed in this dataset's image set file.
-    """
-    # Example path to image set file:
-    # self._devkit_path + /VOCdevkit2007/VOC2007/ImageSets/Main/val.txt
     image_set_file = os.path.join(self._data_path, 'ImageSets', 'Main',
-                                  self._image_set + '.txt')
+                                  self._image_set + '.txt')#VOCdevkit2007/VOC2007/ImageSets/Main/trainval.txt
     assert os.path.exists(image_set_file), \
       'Path does not exist: {}'.format(image_set_file)
     with open(image_set_file) as f:
       image_index = [x.strip() for x in f.readlines()]
-    return image_index
+    return image_index #返回trainval.txt中所有图片的文件名
 
+  '''返回PASCAL VOC数据集的基本路径'''
   def _get_default_path(self):
-    """
-    Return the default path where PASCAL VOC is expected to be installed.
-    """
-    return os.path.join(cfg.DATA_DIR, 'VOCdevkit' + self._year)
+    return os.path.join(cfg.DATA_DIR, 'VOCdevkit' + self._year)#data/VOCdevkit2007
 
+
+  '''制作voc_2007_trainval_gt_roidb.pkl文件，并返回gt_roidb'''
   def gt_roidb(self):
-    """
-    Return the database of ground-truth regions of interest.
-
-    This function loads/saves from/to a cache file to speed up future calls.
-    """
-    cache_file = os.path.join(self.cache_path, self.name + '_gt_roidb.pkl')
+    cache_file = os.path.join(self.cache_path, self.name + '_gt_roidb.pkl')#data/cache/voc_2007_trainval_gt_roidb.pkl
     if os.path.exists(cache_file):
       with open(cache_file, 'rb') as fid:
         try:
@@ -113,10 +104,16 @@ class pascal_voc(imdb):
 
     gt_roidb = [self._load_pascal_annotation(index)
                 for index in self.image_index]
+
+    #将gt_roidb写入到voc_2007_trainval_gt_roidb.pkl
     with open(cache_file, 'wb') as fid:
       pickle.dump(gt_roidb, fid, pickle.HIGHEST_PROTOCOL)
     print('wrote gt roidb to {}'.format(cache_file))
 
+    '''
+    gt_roidb是一个列表，列表每个元素是字典
+    每个字典保存着trainval.txt中每张图片对应的XML文件的{'boxes': boxes,'gt_classes''gt_overlaps''flipped''seg_areas'}
+    '''
     return gt_roidb
 
   def rpn_roidb(self):
@@ -138,12 +135,9 @@ class pascal_voc(imdb):
       box_list = pickle.load(f)
     return self.create_roidb_from_box_list(box_list, gt_roidb)
 
+  '''解析每个图片的标签xml文件,以字典形式返回其bbox等标签'''
   def _load_pascal_annotation(self, index):
-    """
-    Load image and bounding boxes info from XML file in the PASCAL VOC
-    format.
-    """
-    filename = os.path.join(self._data_path, 'Annotations', index + '.xml')
+    filename = os.path.join(self._data_path, 'Annotations', index + '.xml')#
     tree = ET.parse(filename)
     objs = tree.findall('object')
     if not self.config['use_diff']:
@@ -156,9 +150,9 @@ class pascal_voc(imdb):
       objs = non_diff_objs
     num_objs = len(objs)
 
-    boxes = np.zeros((num_objs, 4), dtype=np.uint16)
-    gt_classes = np.zeros((num_objs), dtype=np.int32)
-    overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
+    boxes = np.zeros((num_objs, 4), dtype=np.uint16)#(2,4)
+    gt_classes = np.zeros((num_objs), dtype=np.int32)#(2,4)
+    overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)#(2,21)
     # "Seg" area for pascal is just the box area
     seg_areas = np.zeros((num_objs), dtype=np.float32)
 
@@ -174,7 +168,7 @@ class pascal_voc(imdb):
       boxes[ix, :] = [x1, y1, x2, y2]
       gt_classes[ix] = cls
       overlaps[ix, cls] = 1.0
-      seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
+      seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)#box的面积
 
     overlaps = scipy.sparse.csr_matrix(overlaps)
 

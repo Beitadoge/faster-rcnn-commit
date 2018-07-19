@@ -1,3 +1,4 @@
+#coding=utf-8
 # --------------------------------------------------------
 # Fast R-CNN
 # Copyright (c) 2015 Microsoft
@@ -16,6 +17,10 @@ from model.bbox_transform import bbox_transform
 from utils.cython_bbox import bbox_overlaps
 import PIL
 
+
+
+
+'''给类pascal_voc中的self.gt_roidb增加几种属性'''
 def prepare_roidb(imdb):
   """Enrich the imdb's roidb by adding some derived quantities that
   are useful for training. This function precomputes the maximum
@@ -23,12 +28,12 @@ def prepare_roidb(imdb):
   each ground-truth box. The class with maximum overlap is also
   recorded.
   """
-  roidb = imdb.roidb
-  if not (imdb.name.startswith('coco')):
+  roidb = imdb.roidb #(10022,)列表，包括了水平翻转后的数据，所以数量是原来(5011)的两倍
+  if not (imdb.name.startswith('coco')): #imdb.name.startswith('coco')=False
     sizes = [PIL.Image.open(imdb.image_path_at(i)).size
-         for i in range(imdb.num_images)]
+         for i in range(imdb.num_images)]#记录每张图片的大小，(width，height)
   for i in range(len(imdb.image_index)):
-    roidb[i]['image'] = imdb.image_path_at(i)
+    roidb[i]['image'] = imdb.image_path_at(i) #图片的位置
     if not (imdb.name.startswith('coco')):
       roidb[i]['width'] = sizes[i][0]
       roidb[i]['height'] = sizes[i][1]
